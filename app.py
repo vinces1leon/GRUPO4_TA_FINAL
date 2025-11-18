@@ -246,7 +246,7 @@ if uploaded1 is not None and uploaded2 is not None:
             speedup_par_vm = METRICAS_LOCAL['paralelo']['time_sec'] / res_par['tiempo']
             mem_eff_par = METRICAS_LOCAL['paralelo']['mem_peak_mb'] / res_par['memoria_mb']
             
-            st.metric("⚡ Speedup (Local / VM)", f"{speedup_par:.2f}x")
+            st.metric("⚡ Speedup (Local / VM)", f"{speedup_par_vm:.2f}x")
             st.metric("💾 Eficiencia Memoria (Local / VM)", f"{mem_eff_par:.2f}x")
             
             st.info(f"""
@@ -350,3 +350,4 @@ else:
         - Speedup esperado: ~1.54x
 
         """)
+
