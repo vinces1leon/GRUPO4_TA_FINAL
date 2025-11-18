@@ -3,7 +3,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import time
-import os
 import tracemalloc
 from multiprocessing import Pool, cpu_count
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
@@ -14,6 +13,7 @@ from sklearn.impute import SimpleImputer
 import warnings
 warnings.filterwarnings('ignore')
 
+# ==================== FUNCIONES SECUENCIALES ====================
 def juntar_df_sec(df1,df2):
     x = []
     for col1 in df1.columns:
@@ -38,10 +38,11 @@ def limpieza_df_sec(df_final):
    df_final = df_final.reset_index(drop=True)
 
    masc_filas = df_final.isna().sum(axis=1) / df_final.shape[1]
-   #eliminar las filas con más del 70% de NaN
+   # eliminar las filas con más del 70% de NaN
    thresh = int(0.3 * df_final.shape[1]) + 1
    df_final = df_final.dropna(axis=0, thresh=thresh)
    ((df_final.isna().sum(axis=1) / df_final.shape[1]) > 0.7).any()
+   return df_final
 
 def filtrar_columnas_sec(df_final):
    columnas_utiles_cod = [
@@ -213,91 +214,126 @@ def analisis_correlacion_sec(df_filtrado):
     corr = df_filtrado[num_cols].corr()
     return corr
 
-def analisis_cluster_sec(df_filtrado):
-   # Selección de variables para clustering
-   vars_cluster = ["Sup_Sembrada", "Sup_Cosechada", "Prod_Total","Venta_Cant", "Venta_Valor", "Consumo_Cant", "Consumo_Valor", "Semilla_Cant"]
-   X = df_filtrado[vars_cluster].fillna(0)  # aseguramos no NaN
-   X_scaled = StandardScaler().fit_transform(X)
-   # K-Means con 4 clusters (puedes ajustar con Elbow method)
-   kmeans = KMeans(n_clusters=4, random_state=42)
-   df_filtrado["Cluster"] = kmeans.fit_predict(X_scaled)
-
+def analisis_cluster_sec(df):
+   cols_cluster = ["Sup_Sembrada", "Sup_Cosechada", "Prod_Total",
+                    "Venta_Cant", "Venta_Valor", 
+                    "Consumo_Cant", "Consumo_Valor", "Semilla_Cant"]
+   cols_existentes = [col for col in cols_cluster if col in df.columns]
+   if len(cols_existentes) < 2 or len(df) < 100:
+      # Siempre devolvemos un array 2D para no romper el flujo
+      return np.array([[0, 0]])
+        
+   # Preparar datos
+   X = df[cols_existentes].fillna(0).values
+   # Escalado
+   scaler = StandardScaler()
+   X_scaled = scaler.fit_transform(X)
+        
+   # PCA
    pca = PCA(n_components=2)
    X_pca = pca.fit_transform(X_scaled)
+        
+   #Análisis de componentes principales ----
+   explained_variance = pca.explained_variance_ratio_
+   loadings = pd.DataFrame(
+       pca.components_.T, 
+       columns=[f"PC{i+1}" for i in range(len(pca.components_))],
+       index=cols_existentes)
+        
+   print("\n=== PCA ===")
+   print("Varianza explicada por cada componente:")
+   print(explained_variance)
+   print("\nCargas de las variables en los componentes:")
+   print(loadings)
+        
+   for i in range(len(pca.components_)):
+      comp = loadings.iloc[:, i].sort_values(key=abs, ascending=False)
+      print(f"\nPC{i+1} está más relacionado con:")
+      print(comp.head(5))
+            
+   # Clustering
+   kmeans = KMeans(n_clusters=6, n_init=5, max_iter=100, random_state=42, algorithm='elkan')
+   df["Cluster"] = kmeans.fit_predict(X_scaled)
+        
    return X_pca
 
-def ejecutar_secuencial(csv1_path, csv2_path):
-    # iniciar temporizador
-    start_time = time.time()
-    tracemalloc.start()
+def crear_grafico_heatmap_sec(corr):
+    fig, ax = plt.subplots(figsize=(16,12))
+    sns.heatmap(corr, annot=True, fmt=".2f", cmap="coolwarm", center=0, 
+                cbar=True, square=True, linewidths=0, annot_kws={"size":8}, ax=ax)
+    ax.set_title("Matriz de Correlación - Producción Agropecuaria", fontsize=14)
+    plt.xticks(rotation=90)
+    plt.yticks(rotation=0)
+    plt.tight_layout()
+    return fig
 
-    # cargar datos
-    df1 = pd.read_csv(csv1_path, sep=",")
-    df2 = pd.read_csv(csv2_path, sep=",")
+def crear_grafico_elbow_sec(X_pca, max_k=10):
+    inertia = []
+    K = range(1, max_k + 1)
+    for k in K:
+        kmeans = KMeans(n_clusters=k, random_state=42)
+        kmeans.fit(X_pca)
+        inertia.append(kmeans.inertia_)
+    
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.plot(K, inertia, marker='o')
+    ax.set_xlabel("Número de clústeres (k)")
+    ax.set_ylabel("Inercia (SSE)")
+    ax.set_title("Método del codo para determinar k óptimo (PCA)")
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    return fig
 
-    # Pipeline original
-    df_final = juntar_df_sec(df1, df2)
-    limpieza_df_sec(df_final)
+def crear_grafico_scatter_sec(X_pca, df_filtrado):
+    fig, ax = plt.subplots(figsize=(10,7))
+    scatter = ax.scatter(X_pca[:,0], X_pca[:,1], c=df_filtrado["Cluster"], 
+                        cmap="Set2", s=50, alpha=0.7)
+    ax.set_xlim(-5, 15)
+    ax.set_ylim(-10, 30)
+    ax.set_title("Clusters de Productores (PCA 2D)")
+    ax.set_xlabel("Componente Principal 1")
+    ax.set_ylabel("Componente Principal 2")
+    plt.colorbar(scatter, ax=ax, label="Cluster")
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    return fig
 
-    # unir enteros/decimales
-    juntar_entero_con_decimal_sec(df_final, 'P210_SUP_1', 'P210_SUP_2', 'P210_SUP')
-    juntar_entero_con_decimal_sec(df_final, 'P217_SUP_1', 'P217_SUP_2', 'P217_SUP')
-    juntar_entero_con_decimal_sec(df_final, 'P219_CANT_1', 'P219_CANT_2', 'P219_CANT')
-    juntar_entero_con_decimal_sec(df_final, 'P220_1_CANT_1', 'P220_1_CANT_2', 'P220_1_CANT')
-    juntar_entero_con_decimal_sec(df_final, 'P220_1_PREC_1', 'P220_1_PREC_2', 'P220_1_PREC')
-    juntar_entero_con_decimal_sec(df_final, 'P220_2_ENT', 'P220_2_DEC', 'P220_2')
-    juntar_entero_con_decimal_sec(df_final, 'P220_2_PREC_1', 'P220_2_PREC_2', 'P220_2_PREC')
-    juntar_entero_con_decimal_sec(df_final, 'P220_3_ENT', 'P220_3_DEC', 'P220_3')
-    juntar_entero_con_decimal_sec(df_final, 'P220_3A_ENT', 'P220_3A_DEC', 'P220_3A')
-    juntar_entero_con_decimal_sec(df_final, 'P220_3A_PREC_1', 'P220_3A_PREC_2', 'P220_3A_PREC')
-    juntar_entero_con_decimal_sec(df_final, 'P220_3B_ENT', 'P220_3B_DEC', 'P220_3B')
-    juntar_entero_con_decimal_sec(df_final, 'P220_3B_PREC_1', 'P220_3B_PREC_2', 'P220_3B_PREC')
-    juntar_entero_con_decimal_sec(df_final, 'P220_4_ENT', 'P220_4_DEC', 'P220_4')
-    juntar_entero_con_decimal_sec(df_final, 'P220_5_ENT', 'P220_5_DEC', 'P220_5')
-    juntar_entero_con_decimal_sec(df_final, 'P220_6_ENT', 'P220_6_DEC', 'P220_6')
-    juntar_entero_con_decimal_sec(df_final, 'P220_7_ENT', 'P220_7_DEC', 'P220_7')
-    juntar_entero_con_decimal_sec(df_final, 'P220_8_ENT', 'P220_8_DEC', 'P220_8')
-    juntar_entero_con_decimal_sec(df_final, 'P220_9_ENT', 'P220_9_DEC', 'P220_9')
-    juntar_entero_con_decimal_sec(df_final, 'P220_10_ENT', 'P220_10_DEC', 'P220_10')
-    juntar_entero_con_decimal_sec(df_final, 'P220_11_ENT', 'P220_11_DEC', 'P220_11')
-    juntar_entero_con_decimal_sec(df_final, 'P220_12_ENT', 'P220_12_DEC', 'P220_12')
+def interpretar_clusters_sec(df, cols_cluster, cluster_col="Cluster"):
+    # Asegurar que solo se usen las columnas numéricas de interés
+    cols_existentes = [col for col in cols_cluster if col in df.columns]
 
-    df_filtrado = filtrar_columnas_sec(df_final)
-    df_filtrado = limpieza2_sec(df_filtrado)
-    df_filtrado = renombrar_variables_sec(df_filtrado)
+    # Promedio general
+    media_general = df[cols_existentes].mean()
 
-    corr = analisis_correlacion_sec(df_filtrado)
-    X_pca = analisis_cluster_sec(df_filtrado)
+    # Promedio por cluster
+    resumen_clusters = df.groupby(cluster_col)[cols_existentes].mean()
 
-    # Terminar medición
-    end_time = time.time()
-    current, peak = tracemalloc.get_traced_memory()
-    tracemalloc.stop()
+    # Diferencia relativa respecto a la media general
+    diferencias = resumen_clusters - media_general
 
-    tiempo_total = end_time - start_time
+    print("\n=== Interpretación de clusters ===")
+    for c in resumen_clusters.index:
+        print(f"\nCluster {c}:")
+        desc = diferencias.loc[c].sort_values(key=abs, ascending=False)
+        print("Variables más diferenciadoras (respecto a la media):")
+        print(desc.head(5))
 
-    resultados = {
-        "tiempo": tiempo_total,
-        "memoria_mb": peak / 1024**2,
-        "correlacion": corr,
-        "X_pca": X_pca
-    }
+    return resumen_clusters, diferencias
 
-    return resultados
 
+# ==================== FUNCIONES PARALELAS ====================
 NUM_CORES = cpu_count()
 CHUNK_SIZE = 10000
 
-def cargar_datos_paralelo():
+def cargar_datos_paralelo(csv1_path, csv2_path):
     def cargar_csv(filename):
         return pd.read_csv(filename, sep=",", low_memory=False, engine='c')
     
     with ThreadPoolExecutor(max_workers=2) as executor:
-        future_df1 = executor.submit(cargar_csv, '03_CAP200AB.csv')
-        future_df2 = executor.submit(cargar_csv, '03_CAP200A.csv')
+        future_df1 = executor.submit(cargar_csv, csv1_path)
+        future_df2 = executor.submit(cargar_csv, csv2_path)
         df1 = future_df1.result()
         df2 = future_df2.result()
-
     return df1, df2
 
 def juntar_df_optimizado(df1, df2):
@@ -512,35 +548,59 @@ def renombrar_paralelo(df_filtrado):
     return df_filtrado.rename(columns=rename_dict_filtered)
 
 def analisis_paralelo_completo(df_filtrado):
-
     def calcular_correlacion(df_filtrado):
         cols_excluir = ["Cod_Dep", "Departamento", "Cod_Prov", "Provincia",
                         "Cod_Dist", "Distrito", "Region", "Id_Productor",
                         "Estrato", "Factor_Expansion", "Prod_UM", "Prod_UM_Cod", 
                         'Semilla_Autoconsumo', 'Semilla_Venta','Trueque','Donacion',
                         'Robo','Perdida_PreCosecha','Perdida_Cosecha','Otro_Merc3',
-                        'Otro_Merc2','Otro_Merc1','Merc_NoSabe','Merc_Lima','Merc_agroind',
+                        'Otro_Merc2','Otro_Merc1','Merc_NoSabe','Merc_Lima','Merc_Agroind',
                         'Merc_Exterior','Merc_Regional','Merc_Local']
         num_cols = [col for col in df_filtrado.columns if col not in cols_excluir and pd.api.types.is_numeric_dtype(df_filtrado[col])]
         return df_filtrado[num_cols].corr()
     
     def calcular_clustering_pca(df):
-        cols_cluster = ["Sup_Sembrada", "Sup_Cosechada", "Prod_Total","Venta_Cant", "Venta_Valor", "Consumo_Cant", "Consumo_Valor", "Semilla_Cant"]
+        cols_cluster = ["Sup_Sembrada", "Sup_Cosechada", "Prod_Total",
+                    "Venta_Cant", "Venta_Valor", 
+                    "Consumo_Cant", "Consumo_Valor", "Semilla_Cant"]
         cols_existentes = [col for col in cols_cluster if col in df.columns]
         if len(cols_existentes) < 2 or len(df) < 100:
             return np.array([[0, 0]]), df, []
+        
         # Preparar datos
         X = df[cols_existentes].fillna(0).values
         # Escalado
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(X)
+        
         # PCA
         pca = PCA(n_components=2)
         X_pca = pca.fit_transform(X_scaled)
+        
+        # Análisis de componentes principales
+        explained_variance = pca.explained_variance_ratio_
+        loadings = pd.DataFrame(
+            pca.components_.T, 
+            columns=[f"PC{i+1}" for i in range(len(pca.components_))],
+            index=cols_existentes)
+        
+        print("\n=== PCA ===")
+        print("Varianza explicada por cada componente:")
+        print(explained_variance)
+        print("\nCargas de las variables en los componentes:")
+        print(loadings)
+        
+        for i in range(len(pca.components_)):
+            comp = loadings.iloc[:, i].sort_values(key=abs, ascending=False)
+            print(f"\nPC{i+1} está más relacionado con:")
+            print(comp.head(5))
+            
         # Clustering
-        kmeans = KMeans(n_clusters=4, n_init=5, max_iter=100, random_state=42, algorithm='elkan')
-        df_filtrado["Cluster"] = kmeans.fit_predict(X_scaled)
+        kmeans = KMeans(n_clusters=6, n_init=5, max_iter=100, random_state=42, algorithm='elkan')
+        df["Cluster"] = kmeans.fit_predict(X_scaled)
+        
         return X_pca
+
     
     # Ejecutar análisis en paralelo
     with ThreadPoolExecutor(max_workers=2) as executor:
@@ -550,6 +610,29 @@ def analisis_paralelo_completo(df_filtrado):
         X_pca = future_cluster.result()
 
     return correlacion, X_pca
+
+
+def interpretar_clusters(df, cols_cluster, cluster_col="Cluster"):
+    # Asegurar que solo se usen las columnas numéricas de interés
+    cols_existentes = [col for col in cols_cluster if col in df.columns]
+
+    # Promedio general
+    media_general = df[cols_existentes].mean()
+
+    # Promedio por cluster
+    resumen_clusters = df.groupby(cluster_col)[cols_existentes].mean()
+
+    # Diferencia relativa respecto a la media general
+    diferencias = resumen_clusters - media_general
+
+    print("\n=== Interpretación de clusters ===")
+    for c in resumen_clusters.index:
+        print(f"\nCluster {c}:")
+        desc = diferencias.loc[c].sort_values(key=abs, ascending=False)
+        print("Variables más diferenciadoras (respecto a la media):")
+        print(desc.head(5))
+
+    return resumen_clusters, diferencias
 
 def generar_graficos(correlacion, X_pca, df_filtrado):
     def crear_heatmap(corr):
@@ -578,68 +661,195 @@ def generar_graficos(correlacion, X_pca, df_filtrado):
         plt.show()
         return True
 
+    # gráfico del codo usando X_pca
+    def crear_elbow(X_pca, max_k=10):  
+        inertia = []
+        K = range(1, max_k + 1)
+        for k in K:
+            kmeans = KMeans(n_clusters=k, random_state=42)
+            kmeans.fit(X_pca)
+            inertia.append(kmeans.inertia_)
+        plt.figure(figsize=(8,5))
+        plt.plot(K, inertia, marker='o')
+        plt.xlabel("Número de clústeres (k)")
+        plt.ylabel("Inercia (SSE)")
+        plt.title("Método del codo para determinar k óptimo (sobre PCA)")
+        plt.grid(True, alpha=0.3)
+        plt.show()
+        return True
+
     resultado_heatmap = crear_heatmap(correlacion)
+    resultado_elbow = crear_elbow(X_pca, max_k=10)      
     resultado_scatter = crear_scatter(X_pca, df_filtrado)
 
     # Resumen
     graficos_generados = 0
     if resultado_heatmap:
         graficos_generados += 1
+    if resultado_elbow:
+        graficos_generados += 1
     if resultado_scatter:
         graficos_generados += 1
 
-def ejecutar_paralelo(csv1_path, csv2_path):
-    """
-    Ejecuta TODO el pipeline paralelo
-    y retorna métricas + figuras generadas.
-    """
+    print(f"Total de gráficos generados: {graficos_generados}/3")
 
+# ==================== FUNCIONES EJECUTORAS PRINCIPALES ====================
+
+def ejecutar_secuencial(csv1_path, csv2_path):
+    """
+    Ejecuta el pipeline completo de forma secuencial.
+    Retorna un diccionario con tiempo, memoria, correlación, X_pca, df_filtrado y figuras.
+    """
     start_time = time.time()
     tracemalloc.start()
-
-    df1, df2 = cargar_datos_paralelo(csv1_path, csv2_path)
-    df_final = juntar_df_optimizado(df1, df2)
-    df_final = limpieza_df_ultrarapida(df_final)
-
-    columnas_pares = [
-        ('P210_SUP_1','P210_SUP_2','P210_SUP'),
-        ('P217_SUP_1','P217_SUP_2','P217_SUP'),
-        ('P219_CANT_1','P219_CANT_2','P219_CANT'),
-        ('P220_1_CANT_1','P220_1_CANT_2','P220_1_CANT'),
-        ('P220_1_PREC_1','P220_1_PREC_2','P220_1_PREC'),
-        ('P220_2_ENT','P220_2_DEC','P220_2'),
-        ('P220_3_ENT','P220_3_DEC','P220_3'),
-        ('P220_3A_ENT','P220_3A_DEC','P220_3A'),
-        ('P220_3B_ENT','P220_3B_DEC','P220_3B'),
-        ('P220_4_ENT','P220_4_DEC','P220_4'),
-        ('P220_5_ENT','P220_5_DEC','P220_5'),
-        ('P220_6_ENT','P220_6_DEC','P220_6'),
-        ('P220_7_ENT','P220_7_DEC','P220_7'),
-        ('P220_8_ENT','P220_8_DEC','P220_8'),
-        ('P220_9_ENT','P220_9_DEC','P220_9'),
-        ('P220_10_ENT','P220_10_DEC','P220_10'),
-        ('P220_11_ENT','P220_11_DEC','P220_11'),
-        ('P220_12_ENT','P220_12_DEC','P220_12')
-    ]
-
-    df_final = juntar_entero_con_decimal_optimizado(df_final, columnas_pares)
-
-    df_filtrado = pipeline_filtrado_limpieza_ultrarapido(df_final)
-    df_filtrado = renombrar_paralelo(df_filtrado)
-
-    correlacion, X_pca = analisis_paralelo_completo(df_filtrado)
-
+    
+    # Cargar datos
+    df1 = pd.read_csv(csv1_path, sep=",")
+    df2 = pd.read_csv(csv2_path, sep=",")
+    
+    # Juntar dataframes
+    df_final = juntar_df_sec(df1, df2)
+    df_final = limpieza_df_sec(df_final)
+    
+    # Juntar columnas entero-decimal
+    juntar_entero_con_decimal_sec(df_final, 'P210_SUP_1', 'P210_SUP_2', 'P210_SUP')
+    juntar_entero_con_decimal_sec(df_final, 'P217_SUP_1', 'P217_SUP_2', 'P217_SUP')
+    juntar_entero_con_decimal_sec(df_final, 'P219_CANT_1', 'P219_CANT_2', 'P219_CANT')
+    juntar_entero_con_decimal_sec(df_final, 'P220_1_CANT_1', 'P220_1_CANT_2', 'P220_1_CANT')
+    juntar_entero_con_decimal_sec(df_final, 'P220_1_PREC_1', 'P220_1_PREC_2', 'P220_1_PREC')
+    juntar_entero_con_decimal_sec(df_final, 'P220_2_ENT', 'P220_2_DEC', 'P220_2')
+    juntar_entero_con_decimal_sec(df_final, 'P220_2_PREC_1', 'P220_2_PREC_2', 'P220_2_PREC')
+    juntar_entero_con_decimal_sec(df_final, 'P220_3_ENT', 'P220_3_DEC', 'P220_3')
+    juntar_entero_con_decimal_sec(df_final, 'P220_3A_ENT', 'P220_3A_DEC', 'P220_3A')
+    juntar_entero_con_decimal_sec(df_final, 'P220_3A_PREC_1', 'P220_3A_PREC_2', 'P220_3A_PREC')
+    juntar_entero_con_decimal_sec(df_final, 'P220_3B_ENT', 'P220_3B_DEC', 'P220_3B')
+    juntar_entero_con_decimal_sec(df_final, 'P220_3B_PREC_1', 'P220_3B_PREC_2', 'P220_3B_PREC')
+    juntar_entero_con_decimal_sec(df_final, 'P220_4_ENT', 'P220_4_DEC', 'P220_4')
+    juntar_entero_con_decimal_sec(df_final, 'P220_5_ENT', 'P220_5_DEC', 'P220_5')
+    juntar_entero_con_decimal_sec(df_final, 'P220_6_ENT', 'P220_6_DEC', 'P220_6')
+    juntar_entero_con_decimal_sec(df_final, 'P220_7_ENT', 'P220_7_DEC', 'P220_7')
+    juntar_entero_con_decimal_sec(df_final, 'P220_8_ENT', 'P220_8_DEC', 'P220_8')
+    juntar_entero_con_decimal_sec(df_final, 'P220_9_ENT', 'P220_9_DEC', 'P220_9')
+    juntar_entero_con_decimal_sec(df_final, 'P220_10_ENT', 'P220_10_DEC', 'P220_10')
+    juntar_entero_con_decimal_sec(df_final, 'P220_11_ENT', 'P220_11_DEC', 'P220_11')
+    juntar_entero_con_decimal_sec(df_final, 'P220_12_ENT', 'P220_12_DEC', 'P220_12')
+    
+    # Filtrado y limpieza
+    df_filtrado = filtrar_columnas_sec(df_final)
+    df_filtrado = limpieza2_sec(df_filtrado)
+    df_filtrado = renombrar_variables_sec(df_filtrado)
+    
+    # Análisis
+    corr = analisis_correlacion_sec(df_filtrado)
+    X_pca = analisis_cluster_sec(df_filtrado)
+    
+    # Crear gráficos
+    fig_heatmap = crear_grafico_heatmap_sec(corr)
+    fig_elbow = crear_grafico_elbow_sec(X_pca, max_k=10)
+    fig_scatter = crear_grafico_scatter_sec(X_pca, df_filtrado)
+    
+    # Métricas finales
     end_time = time.time()
     current, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
-
+    
     tiempo_total = end_time - start_time
-
-    resultados = {
+    memoria_mb = peak / 1024**2
+    
+    print(f"\n{'='*50}")
+    print(f"SECUENCIAL - Tiempo: {tiempo_total:.2f}s | Memoria: {memoria_mb:.1f} MB")
+    print(f"{'='*50}")
+    
+    return {
         "tiempo": tiempo_total,
-        "memoria_mb": peak / 1024**2,
-        "correlacion": correlacion,
-        "X_pca": X_pca
+        "memoria_mb": memoria_mb,
+        "correlacion": corr,
+        "X_pca": X_pca,
+        "df_filtrado": df_filtrado,
+        "fig_heatmap": fig_heatmap,
+        "fig_elbow": fig_elbow,
+        "fig_scatter": fig_scatter
     }
 
-    return resultados
+def ejecutar_paralelo(csv1_path, csv2_path):
+    """
+    Ejecuta el pipeline completo de forma paralela.
+    Retorna un diccionario con tiempo, memoria, correlación, X_pca, df_filtrado y figuras.
+    """
+    start_time = time.time()
+    tracemalloc.start()
+    
+    print(f"=== PIPELINE PARALELIZADO ===")
+    print(f"Usando {NUM_CORES} núcleos de CPU")
+    
+    # Cargar datos en paralelo
+    df1, df2 = cargar_datos_paralelo(csv1_path, csv2_path)
+    df_final = juntar_df_optimizado(df1, df2)
+    df_final = limpieza_df_ultrarapida(df_final)
+    
+    # Juntar columnas
+    columnas_pares = [
+        ('P210_SUP_1', 'P210_SUP_2', 'P210_SUP'),
+        ('P217_SUP_1', 'P217_SUP_2', 'P217_SUP'),
+        ('P219_CANT_1', 'P219_CANT_2', 'P219_CANT'),
+        ('P220_1_CANT_1', 'P220_1_CANT_2', 'P220_1_CANT'),
+        ('P220_1_PREC_1', 'P220_1_PREC_2', 'P220_1_PREC'),
+        ('P220_2_ENT', 'P220_2_DEC', 'P220_2'),
+        ('P220_2_PREC_1', 'P220_2_PREC_2', 'P220_2_PREC'),
+        ('P220_3_ENT', 'P220_3_DEC', 'P220_3'),
+        ('P220_3A_ENT', 'P220_3A_DEC', 'P220_3A'),
+        ('P220_3A_PREC_1', 'P220_3A_PREC_2', 'P220_3A_PREC'),
+        ('P220_3B_ENT', 'P220_3B_DEC', 'P220_3B'),
+        ('P220_3B_PREC_1', 'P220_3B_PREC_2', 'P220_3B_PREC'),
+        ('P220_4_ENT', 'P220_4_DEC', 'P220_4'),
+        ('P220_5_ENT', 'P220_5_DEC', 'P220_5'),
+        ('P220_6_ENT', 'P220_6_DEC', 'P220_6'),
+        ('P220_7_ENT', 'P220_7_DEC', 'P220_7'),
+        ('P220_8_ENT', 'P220_8_DEC', 'P220_8'),
+        ('P220_9_ENT', 'P220_9_DEC', 'P220_9'),
+        ('P220_10_ENT', 'P220_10_DEC', 'P220_10'),
+        ('P220_11_ENT', 'P220_11_DEC', 'P220_11'),
+        ('P220_12_ENT', 'P220_12_DEC', 'P220_12')
+    ]
+    df_final = juntar_entero_con_decimal_optimizado(df_final, columnas_pares)
+    
+    # Filtrado y limpieza
+    df_filtrado = pipeline_filtrado_limpieza_ultrarapido(df_final)
+    df_filtrado = renombrar_paralelo(df_filtrado)
+    
+    # Análisis en paralelo
+    correlacion, X_pca = analisis_paralelo_completo(df_filtrado)
+    
+    # Interpretación de clusters
+    cols_cluster = ["Sup_Sembrada", "Sup_Cosechada", "Prod_Total",
+                    "Venta_Cant", "Venta_Valor", "Consumo_Cant", 
+                    "Consumo_Valor", "Semilla_Cant"]
+    interpretar_clusters(df_filtrado, cols_cluster, cluster_col="Cluster")
+    
+    # Crear gráficos
+    fig_heatmap = crear_grafico_heatmap_sec(correlacion)
+    fig_elbow = crear_grafico_elbow_sec(X_pca, max_k=10)
+    fig_scatter = crear_grafico_scatter_sec(X_pca, df_filtrado)
+    
+    # Métricas finales
+    end_time = time.time()
+    current, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    
+    tiempo_total = end_time - start_time
+    memoria_mb = peak / 1024**2
+    
+    print(f"\n{'='*50}")
+    print(f"PARALELO - Tiempo: {tiempo_total:.2f}s | Memoria: {memoria_mb:.1f} MB")
+    print(f"{'='*50}")
+    
+    return {
+        "tiempo": tiempo_total,
+        "memoria_mb": memoria_mb,
+        "correlacion": correlacion,
+        "X_pca": X_pca,
+        "df_filtrado": df_filtrado,
+        "fig_heatmap": fig_heatmap,
+        "fig_elbow": fig_elbow,
+        "fig_scatter": fig_scatter
+    }
