@@ -46,7 +46,7 @@ if uploaded1 is not None and uploaded2 is not None:
     st.header("⚡ Ejecutar Análisis")
     
     col_btn1, col_btn2, col_btn3 = st.columns(3)
-    
+
     # ==================== BOTÓN SECUENCIAL ====================
     if col_btn1.button("🐢 Ejecutar Secuencial", use_container_width=True):
         with st.spinner("Ejecutando pipeline secuencial..."):
@@ -64,17 +64,17 @@ if uploaded1 is not None and uploaded2 is not None:
         col_m2.metric("💾 Memoria Pico (VM)", f"{res_seq['memoria_mb']:.1f} MB")
         
         # Comparación con local
-        ratio_time = res_seq['tiempo'] / METRICAS_LOCAL['secuencial']['time_sec']
-        ratio_mem = res_seq['memoria_mb'] / METRICAS_LOCAL['secuencial']['mem_peak_mb']
-        
-        col_m3.metric("🔄 Ratio VM/Local (tiempo)", f"{ratio_time:.2f}x")
+        speedup_seq = METRICAS_LOCAL['secuencial']['time_sec'] / res_seq['tiempo']
+        mem_ratio_seq = METRICAS_LOCAL['secuencial']['mem_peak_mb'] / res_seq['memoria_mb']
+
+        col_m3.metric("⚡ Speedup VM vs Local", f"{speedup_seq:.2f}x")
         
         st.info(f"""
         **Comparación con entorno local:**
         - Tiempo Local: {METRICAS_LOCAL['secuencial']['time_sec']:.2f}s
-        - Memoria Local: {METRICAS_LOCAL['secuencial']['mem_peak_mb']:.1f} MB
-        - Ratio Tiempo: {ratio_time:.2f}x
-        - Ratio Memoria: {ratio_mem:.2f}x
+        - Tiempo en VM: {res_seq['tiempo']:.2f}s
+        - Speedup: {speedup_seq:.2f}x
+        - Eficiencia de memoria (Local / VM): {mem_ratio_seq:.2f}x
         """)
         
         # Mostrar gráficos
@@ -113,17 +113,22 @@ if uploaded1 is not None and uploaded2 is not None:
         col_m2.metric("💾 Memoria Pico (VM)", f"{res_par['memoria_mb']:.1f} MB")
         
         # Comparación con local
-        ratio_time = res_par['tiempo'] / METRICAS_LOCAL['paralelo']['time_sec']
-        ratio_mem = res_par['memoria_mb'] / METRICAS_LOCAL['paralelo']['mem_peak_mb']
+        time_local = METRICAS_LOCAL['paralelo']['time_sec']
+        mem_local = METRICAS_LOCAL['paralelo']['mem_peak_mb']
+    
+        speedup_par = time_local / res_par['tiempo']
+        mem_efficiency = mem_local / res_par['memoria_mb']
         
-        col_m3.metric("🔄 Ratio VM/Local (tiempo)", f"{ratio_time:.2f}x")
+        col_m3.metric("⚡ Speedup VM vs Local", f"{speedup_par:.2f}x")
         
         st.info(f"""
         **Comparación con entorno local:**
-        - Tiempo Local: {METRICAS_LOCAL['paralelo']['time_sec']:.2f}s
-        - Memoria Local: {METRICAS_LOCAL['paralelo']['mem_peak_mb']:.1f} MB
-        - Ratio Tiempo: {ratio_time:.2f}x
-        - Ratio Memoria: {ratio_mem:.2f}x
+        - Tiempo Local: {time_local:.2f}s
+        - Tiempo en VM: {res_par['tiempo']:.2f}s
+        - Speedup: {speedup_par:.2f}x
+        - Memoria Local: {mem_local:.1f} MB
+        - Memoria VM: {res_par['memoria_mb']:.1f} MB
+        - Eficiencia de memoria (Local / VM): {mem_efficiency:.2f}x
         """)
         
         # Mostrar gráficos
@@ -155,11 +160,11 @@ if uploaded1 is not None and uploaded2 is not None:
         
         # Ejecutar secuencial
         status_text.text("Ejecutando pipeline secuencial...")
-        progress_bar.progress(10)
+        progress_bar.progress(15)
         start_seq = time.time()
         res_seq = ejecutar_secuencial(csv1_path, csv2_path)
         end_seq = time.time()
-        progress_bar.progress(50)
+        progress_bar.progress(55)
         
         # Ejecutar paralelo
         status_text.text("Ejecutando pipeline paralelo...")
@@ -225,29 +230,27 @@ if uploaded1 is not None and uploaded2 is not None:
         
         with col_local1:
             st.subheader("🐢 Secuencial")
-            ratio_seq_time = res_seq['tiempo'] / METRICAS_LOCAL['secuencial']['time_sec']
-            ratio_seq_mem = res_seq['memoria_mb'] / METRICAS_LOCAL['secuencial']['mem_peak_mb']
+            speedup_seq_vm = METRICAS_LOCAL['secuencial']['time_sec'] / res_seq['tiempo']
+            mem_eff_seq = METRICAS_LOCAL['secuencial']['mem_peak_mb'] / res_seq['memoria_mb']
             
-            st.metric("Ratio Tiempo VM/Local", f"{ratio_seq_time:.2f}x")
-            st.metric("Ratio Memoria VM/Local", f"{ratio_seq_mem:.2f}x")
+            st.metric("⚡ Speedup (Local / VM)", f"{speedup_seq_vm:.2f}x")
+            st.metric("💾 Eficiencia Memoria (Local / VM)", f"{mem_eff_seq:.2f}x")
             
             st.info(f"""
-            **Local:** {METRICAS_LOCAL['secuencial']['time_sec']:.2f}s | {METRICAS_LOCAL['secuencial']['mem_peak_mb']:.1f} MB
-            
+            **Local:** {METRICAS_LOCAL['secuencial']['time_sec']:.2f}s | {METRICAS_LOCAL['secuencial']['mem_peak_mb']:.1f} MB  
             **VM:** {res_seq['tiempo']:.2f}s | {res_seq['memoria_mb']:.1f} MB
             """)
         
         with col_local2:
             st.subheader("🚀 Paralelo")
-            ratio_par_time = res_par['tiempo'] / METRICAS_LOCAL['paralelo']['time_sec']
-            ratio_par_mem = res_par['memoria_mb'] / METRICAS_LOCAL['paralelo']['mem_peak_mb']
+            speedup_par_vm = METRICAS_LOCAL['paralelo']['time_sec'] / res_par['tiempo']
+            mem_eff_par = METRICAS_LOCAL['paralelo']['mem_peak_mb'] / res_par['memoria_mb']
             
-            st.metric("Ratio Tiempo VM/Local", f"{ratio_par_time:.2f}x")
-            st.metric("Ratio Memoria VM/Local", f"{ratio_par_mem:.2f}x")
+            st.metric("⚡ Speedup (Local / VM)", f"{speedup_par:.2f}x")
+            st.metric("💾 Eficiencia Memoria (Local / VM)", f"{mem_eff_par:.2f}x")
             
             st.info(f"""
-            **Local:** {METRICAS_LOCAL['paralelo']['time_sec']:.2f}s | {METRICAS_LOCAL['paralelo']['mem_peak_mb']:.1f} MB
-            
+            **Local:** {METRICAS_LOCAL['paralelo']['time_sec']:.2f}s | {METRICAS_LOCAL['paralelo']['mem_peak_mb']:.1f} MB  
             **VM:** {res_par['tiempo']:.2f}s | {res_par['memoria_mb']:.1f} MB
             """)
         
@@ -281,21 +284,47 @@ if uploaded1 is not None and uploaded2 is not None:
             st.markdown("**Paralelo**")
             st.pyplot(res_par['fig_scatter'])
         
+        # Speedup paralelo vs secuencial
+        speedup_par_vs_seq = res_seq['tiempo'] / res_par['tiempo']
+
+        # Eficiencia de memoria paralelo vs secuencial
+        mem_efficiency = res_seq['memoria_mb'] / res_par['memoria_mb']
+
+        # Tiempo ahorrado por paralelismo
+        time_saved = res_seq['tiempo'] - res_par['tiempo']
+
         # Resumen final
         st.header("🎯 Resumen de Resultados")
         st.success(f"""
         ### Conclusiones:
-        - ⚡ El procesamiento paralelo es **{speedup:.2f}x más rápido** que el secuencial
-        - 💾 Ahorro de memoria: **{mem_saving:.1f}%**
-        - 🕐 Tiempo ahorrado: **{res_seq['tiempo'] - res_par['tiempo']:.2f} segundos**
-        - 📊 Ambos métodos producen resultados idénticos
-        - 🌐 Ratio VM/Local (secuencial): **{ratio_seq_time:.2f}x**
-        - 🌐 Ratio VM/Local (paralelo): **{ratio_par_time:.2f}x**
+        - El procesamiento paralelo es {speedup_par_vs_seq:.2f}× más rápido que el secuencial.
+        - Eficiencia de memoria del paralelo vs secuencial: {mem_efficiency:.2f}×.
+        - Tiempo ahorrado ejecutando en paralelo: {time_saved:.2f} segundos.
+        - Ambos métodos producen resultados idénticos.
+        - Speedup VM vs Local (Secuencial): {speedup_seq_vm:.2f}×
+        - Speedup VM vs Local (Paralelo): {speedup_par_vm:.2f}×
         """)
 
 else:
     st.info("👆 Por favor, sube ambos archivos CSV para comenzar el análisis")
+
+    with st.expander("🖥️ Especificaciones del hardware utilizado"):
+    st.markdown("""
+    ### Equipo Local (Laptop)
+    - **CPU:** AMD Ryzen 7 4800H (8 cores / 16 threads, 2.90 GHz)
+    - **RAM:** 16 GB
+    - **Disco:** SSD Micron 512 GB
+    - **GPU:** NVIDIA GTX 1650 (4 GB) + Radeon Integrada
+    - **SO:** Windows 11, 64 bits
     
+    ---
+    ### Máquina Virtual en Azure (VM)
+    - **Modelo:** B4ms
+    - **vCPUs:** 4
+    - **RAM:** 16 GiB
+    - **SO:** Ubuntu 24.04 LTS
+    """)
+
     # Información adicional
     with st.expander("ℹ️ Información sobre el análisis"):
         st.markdown("""
