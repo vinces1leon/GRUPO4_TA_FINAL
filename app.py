@@ -309,21 +309,21 @@ else:
     st.info("👆 Por favor, sube ambos archivos CSV para comenzar el análisis")
 
     with st.expander("🖥️ Especificaciones del hardware utilizado"):
-    st.markdown("""
-    ### Equipo Local (Laptop)
-    - **CPU:** AMD Ryzen 7 4800H (8 cores / 16 threads, 2.90 GHz)
-    - **RAM:** 16 GB
-    - **Disco:** SSD Micron 512 GB
-    - **GPU:** NVIDIA GTX 1650 (4 GB) + Radeon Integrada
-    - **SO:** Windows 11, 64 bits
-    
-    ---
-    ### Máquina Virtual en Azure (VM)
-    - **Modelo:** B4ms
-    - **vCPUs:** 4
-    - **RAM:** 16 GiB
-    - **SO:** Ubuntu 24.04 LTS
-    """)
+        st.markdown("""
+        ### Equipo Local (Laptop)
+        - **CPU:** AMD Ryzen 7 4800H (8 cores / 16 threads, 2.90 GHz)
+        - **RAM:** 16 GB
+        - **Disco:** SSD Micron 512 GB
+        - **GPU:** NVIDIA GTX 1650 (4 GB) + Radeon Integrada
+        - **SO:** Windows 11, 64 bits
+        
+        ---
+        ### Máquina Virtual en Azure (VM)
+        - **Modelo:** B4ms
+        - **vCPUs:** 4
+        - **RAM:** 16 GiB
+        - **SO:** Ubuntu 24.04 LTS
+        """)
 
     # Información adicional
     with st.expander("ℹ️ Información sobre el análisis"):
@@ -348,4 +348,5 @@ else:
         - Secuencial: 109.81s | 1191.60 MB
         - Paralelo: 71.30s | 1085.0 MB
         - Speedup esperado: ~1.54x
+
         """)
