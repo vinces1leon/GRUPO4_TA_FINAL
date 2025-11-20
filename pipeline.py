@@ -252,7 +252,7 @@ def analisis_cluster_sec(df):
       print(comp.head(5))
             
    # Clustering
-   kmeans = KMeans(n_clusters=6, n_init=5, max_iter=100, random_state=42, algorithm='elkan')
+   kmeans = KMeans(n_clusters=5, n_init=5, max_iter=100, random_state=42, algorithm='elkan')
    df["Cluster"] = kmeans.fit_predict(X_scaled)
         
    return X_pca
@@ -596,7 +596,7 @@ def analisis_paralelo_completo(df_filtrado):
             print(comp.head(5))
             
         # Clustering
-        kmeans = KMeans(n_clusters=6, n_init=5, max_iter=100, random_state=42, algorithm='elkan')
+        kmeans = KMeans(n_clusters=5, n_init=5, max_iter=100, random_state=42, algorithm='elkan')
         df["Cluster"] = kmeans.fit_predict(X_scaled)
         
         return X_pca
@@ -852,4 +852,5 @@ def ejecutar_paralelo(csv1_path, csv2_path):
         "fig_heatmap": fig_heatmap,
         "fig_elbow": fig_elbow,
         "fig_scatter": fig_scatter
+
     }
